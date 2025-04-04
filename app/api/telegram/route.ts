@@ -8,19 +8,49 @@ fal.config({
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`
 
+// Память для защиты (в пределах одного запуска)
+const rateLimit = new Map<string, number>()
+const lastPrompts = new Map<string, string>()
+
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const chatId = body.message?.chat?.id
-  const text = body.message?.text
+  const text = body.message?.text?.trim()
 
   if (!chatId || !text) return NextResponse.json({ ok: true })
 
-  console.log('📥 Получено сообщение:', text)
+  console.log(`📥 [${chatId}] Получено сообщение:`, text)
 
-  if (text.toLowerCase().startsWith('/img ')) {
+  // === /img — генерация изображения через FAL ===
+  if (/^\/img\s+/.test(text.toLowerCase())) {
     const prompt = text.slice(5).trim()
 
+    // антиспам
+    if (lastPrompts.get(chatId) === prompt) {
+      console.log(`⚠️ [${chatId}] Повторный prompt, пропускаем`)
+      return NextResponse.json({ ok: true })
+    }
+
+    const lastTime = rateLimit.get(chatId)
+    if (lastTime && Date.now() - lastTime < 30_000) {
+      console.log(`🚫 [${chatId}] Слишком частый запрос`)
+      await fetch(`${TELEGRAM_API}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: '⏱ Подожди немного перед новой генерацией.',
+        }),
+      })
+      return NextResponse.json({ ok: true })
+    }
+
+    rateLimit.set(chatId, Date.now())
+    lastPrompts.set(chatId, prompt)
+
     try {
+      console.log(`🧠 [${chatId}] Генерация изображения: ${prompt}`)
+
       const result = await fal.subscribe('fal-ai/fast-sdxl', {
         input: {
           prompt,
@@ -66,7 +96,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // AI-ответ от OpenRouter
+  // === Текстовый AI-ответ через OpenRouter (с поиском) ===
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -77,7 +107,7 @@ export async function POST(req: NextRequest) {
         'X-Title': 'Telegram AI Bot',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-3.5-turbo',
+        model: 'perplexity/pplx-70b-chat',
         messages: [{ role: 'user', content: text }],
       }),
     })
