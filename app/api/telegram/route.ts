@@ -33,25 +33,17 @@ export async function POST(req: NextRequest) {
       const lastTime = rateLimit.get(chatId)
       if (lastTime && Date.now() - lastTime < 30_000) {
         console.log(`🚫 [${chatId}] Слишком частый запрос`)
-        await fetch(`${TELEGRAM_API}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '⏱ Подожди немного перед новой генерацией.',
-          }),
-        })
+        await sendText(chatId, '⏱ Подожди немного перед новой генерацией.')
       } else {
         rateLimit.set(chatId, Date.now())
         lastPrompts.set(chatId, prompt)
 
         try {
-          console.log(`🧠 [${chatId}] Генерация изображения: ${prompt}`)
-
+          const stablePrompt = `${prompt}, high quality, cinematic, ultra-detailed`
           const result = await fal.subscribe('fal-ai/fast-sdxl', {
             input: {
-              prompt,
-              negative_prompt: 'ugly, scary, deformed, creepy, disfigured, extra limbs, bad anatomy',
+              prompt: stablePrompt,
+              negative_prompt: 'ugly, deformed, dark, creepy, blurry, bad anatomy',
               image_size: 'square_hd',
               guidance_scale: 7.5,
               num_inference_steps: 25,
@@ -66,7 +58,7 @@ export async function POST(req: NextRequest) {
 
           const imageUrl = result?.data?.images?.[0]?.url
 
-          if (imageUrl) {
+          if (imageUrl && imageUrl.endsWith('.webp')) {
             await fetch(`${TELEGRAM_API}/sendPhoto`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -77,24 +69,17 @@ export async function POST(req: NextRequest) {
               }),
             })
           } else {
-            throw new Error('Картинка не сгенерирована.')
+            throw new Error('Картинка не сгенерирована или повреждена.')
           }
         } catch (err) {
           console.error('🔥 Ошибка генерации:', err)
-          await fetch(`${TELEGRAM_API}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: '⚠️ Ошибка генерации изображения.',
-            }),
-          })
+          await sendText(chatId, '⚠️ Ошибка генерации изображения.')
         }
       }
     }
   }
 
-  // === Остальной текст → AI через OpenRouter ===
+  // === Текст → Claude 3.5 Sonnet через OpenRouter ===
   for (const message of otherMessages) {
     try {
       console.log(`💬 [${chatId}] AI-вопрос: ${message}`)
@@ -108,7 +93,7 @@ export async function POST(req: NextRequest) {
           'X-Title': 'Telegram AI Bot',
         },
         body: JSON.stringify({
-          model: 'mistralai/mistral-7b-instruct-v0.3',
+          model: 'anthropic/claude-3-sonnet',
           messages: [{ role: 'user', content: message }],
         }),
       })
@@ -116,26 +101,20 @@ export async function POST(req: NextRequest) {
       const data = await res.json()
       const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
 
-      await fetch(`${TELEGRAM_API}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: reply,
-        }),
-      })
+      await sendText(chatId, reply)
     } catch (err) {
-      console.error('❌ Ошибка OpenRouter:', err)
-      await fetch(`${TELEGRAM_API}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: '⚠️ Ошибка AI-ответа.',
-        }),
-      })
+      console.error('❌ Ошибка AI:', err)
+      await sendText(chatId, '⚠️ Ошибка AI-ответа.')
     }
   }
 
   return NextResponse.json({ ok: true })
+}
+
+async function sendText(chatId: number, text: string) {
+  await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text }),
+  })
 }
