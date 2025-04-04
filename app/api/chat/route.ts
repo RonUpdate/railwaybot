@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  const body = await req.json()
-  const prompt = body.message
+  const { message } = await req.json()
 
-  const response = await fetch('https://api.openai.com/v1/completions', {
+  const res = await fetch('https://api.openai.com/v1/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -12,14 +11,16 @@ export async function POST(req: NextRequest) {
     },
     body: JSON.stringify({
       model: 'text-davinci-003',
-      prompt,
-      max_tokens: 150,
+      prompt: message,
+      max_tokens: 100,
     }),
   })
 
-  const data = await response.json()
-  const reply = data.choices?.[0]?.text?.trim()
+  const data = await res.json()
 
+  console.log('🧾 RAW OpenAI Response:', JSON.stringify(data, null, 2))
+
+  // Пытаемся вернуть текст, если есть
+  const reply = data?.choices?.[0]?.text?.trim() || '[нет ответа от OpenAI]'
   return NextResponse.json({ reply })
 }
-
