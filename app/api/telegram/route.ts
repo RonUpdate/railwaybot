@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { fal } from '@fal-ai/client'
+
+fal.config({
+  credentials: process.env.FAL_KEY!,
+})
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`
-const FAL_KEY = process.env.FAL_KEY!
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
@@ -13,55 +17,27 @@ export async function POST(req: NextRequest) {
 
   console.log('📥 Получено сообщение:', text)
 
-  // === Картинка
   if (text.toLowerCase().startsWith('/img ')) {
     const prompt = text.slice(5).trim()
 
     try {
-      // 1. Отправка запроса
-      const submission = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
-        method: 'POST',
-        headers: {
-          Authorization: `Key ${FAL_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const result = await fal.subscribe('fal-ai/fast-sdxl', {
+        input: {
           prompt,
           image_size: 'square_hd',
-        }),
+          guidance_scale: 7.5,
+          num_inference_steps: 25,
+        },
+        logs: true,
+        onQueueUpdate(update) {
+          if (update.status === 'IN_PROGRESS') {
+            update.logs?.forEach(log => console.log('📡', log.message))
+          }
+        },
       })
 
-      const submissionData = await submission.json()
-      console.log('📦 Ответ от FAL:', JSON.stringify(submissionData, null, 2))
+      const imageUrl = result?.data?.images?.[0]?.url
 
-      const requestId = submissionData?.request_id
-      if (!requestId) throw new Error('FAL не вернул request_id')
-
-      // 2. Ожидание завершения
-      let result = null
-      let attempts = 0
-
-      while (attempts < 20) {
-        const res = await fetch(`https://queue.fal.run/fal-ai/fast-sdxl/requests/${requestId}`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Key ${FAL_KEY}`,
-          },
-        })
-
-        const data = await res.json()
-        console.log(`⏳ [${attempts}] Статус запроса:`, data.status)
-
-        if (data?.status === 'COMPLETED') {
-          result = data
-          break
-        }
-
-        await new Promise((r) => setTimeout(r, 3000))
-        attempts++
-      }
-
-      const imageUrl = result?.images?.[0]?.url
       if (imageUrl) {
         await fetch(`${TELEGRAM_API}/sendPhoto`, {
           method: 'POST',
@@ -73,15 +49,7 @@ export async function POST(req: NextRequest) {
           }),
         })
       } else {
-        console.error('❌ Картинка не получена:', result)
-        await fetch(`${TELEGRAM_API}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '😿 Картинку не удалось сгенерировать.',
-          }),
-        })
+        throw new Error('Картинка не сгенерирована.')
       }
     } catch (err) {
       console.error('🔥 Ошибка генерации:', err)
@@ -98,7 +66,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // === AI-ответ от OpenRouter
+  // AI-ответ от OpenRouter
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
