@@ -13,11 +13,12 @@ export async function POST(req: NextRequest) {
 
   console.log('📥 Получено сообщение:', text)
 
-  // === Картинка по /img
+  // === Картинка
   if (text.toLowerCase().startsWith('/img ')) {
     const prompt = text.slice(5).trim()
 
     try {
+      // 1. Отправка запроса
       const submission = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
         method: 'POST',
         headers: {
@@ -31,13 +32,15 @@ export async function POST(req: NextRequest) {
       })
 
       const submissionData = await submission.json()
-      console.log('📦 Ответ от FAL:', JSON.stringify(submissionData, null, 2)) // 🔍 лог ответа
+      console.log('📦 Ответ от FAL:', JSON.stringify(submissionData, null, 2))
 
       const requestId = submissionData?.request_id
       if (!requestId) throw new Error('FAL не вернул request_id')
 
+      // 2. Ожидание завершения
       let result = null
       let attempts = 0
+
       while (attempts < 20) {
         const res = await fetch(`https://queue.fal.run/fal-ai/fast-sdxl/requests/${requestId}`, {
           method: 'GET',
@@ -47,6 +50,8 @@ export async function POST(req: NextRequest) {
         })
 
         const data = await res.json()
+        console.log(`⏳ [${attempts}] Статус запроса:`, data.status)
+
         if (data?.status === 'COMPLETED') {
           result = data
           break
@@ -68,7 +73,7 @@ export async function POST(req: NextRequest) {
           }),
         })
       } else {
-        console.error('❌ Не удалось получить изображение:', result)
+        console.error('❌ Картинка не получена:', result)
         await fetch(`${TELEGRAM_API}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -93,7 +98,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // === Текст через OpenRouter
+  // === AI-ответ от OpenRouter
   try {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
