@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
         lastPrompts.set(chatId, prompt)
 
         try {
-          const stablePrompt = `${prompt}, high quality, cinematic, ultra-detailed`
+          const stablePrompt = `(${prompt}), trending on artstation, 8k, ultra realistic, concept art, cinematic lighting, detailed`
 
           const result = await fal.subscribe('fal-ai/fast-sdxl', {
             input: {
