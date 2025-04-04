@@ -1,96 +1,43 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { fal } from '@fal-ai/client'
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`
-
-fal.config({
-  credentials: process.env.FAL_KEY!,
+// шаг 1: отправка запроса
+const submission = await fetch('https://queue.fal.run/fal-ai/recraft-20b', {
+  method: 'POST',
+  headers: {
+    Authorization: `Key ${process.env.FAL_KEY}`,
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    prompt,
+    image_size: 'square_hd',
+    style: 'realistic_image',
+  }),
 })
 
-export async function POST(req: NextRequest) {
-  const body = await req.json()
-  const chatId = body.message?.chat?.id
-  const text = body.message?.text
+const submissionData = await submission.json()
+const requestId = submissionData?.request_id
 
-  if (!chatId || !text) return NextResponse.json({ ok: true })
+if (!requestId) {
+  throw new Error('Fal did not return request_id')
+}
 
-  console.log('📥 Получено сообщение:', text)
-
-  // === Команда /img
-  if (text.toLowerCase().startsWith('/img ')) {
-    const prompt = text.slice(5).trim()
-
-    try {
-      const result = await fal.subscribe('fal-ai/recraft-20b', {
-        input: { prompt },
-        logs: true,
-      })
-
-      const imageUrl = result?.data?.images?.[0]?.url
-
-      if (imageUrl) {
-        await fetch(`${TELEGRAM_API}/sendPhoto`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            photo: imageUrl,
-            caption: `🖼 ${prompt}`,
-          }),
-        })
-      } else {
-        console.error('⚠️ FAL не вернул изображение:', result)
-        await fetch(`${TELEGRAM_API}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: '❌ Картинку не удалось сгенерировать.',
-          }),
-        })
-      }
-    } catch (err) {
-      console.error('🔥 FAL Ошибка:', JSON.stringify(err, null, 2))
-      await fetch(`${TELEGRAM_API}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text: '⚠️ Ошибка генерации изображения.',
-        }),
-      })
-    }
-
-    return NextResponse.json({ ok: true })
-  }
-
-  // === Обычный AI ответ через OpenRouter
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
+// шаг 2: ожидание результата (polling)
+let result = null
+let attempts = 0
+while (attempts < 20) {
+  const res = await fetch(`https://queue.fal.run/fal-ai/recraft-20b/requests/${requestId}`, {
+    method: 'GET',
     headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app',
-      'X-Title': 'Telegram AI Bot',
+      Authorization: `Key ${process.env.FAL_KEY}`,
     },
-    body: JSON.stringify({
-      model: 'openai/gpt-3.5-turbo',
-      messages: [{ role: 'user', content: text }],
-    }),
   })
 
   const data = await res.json()
-  const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
+  if (data?.status === 'COMPLETED') {
+    result = data
+    break
+  }
 
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: reply,
-    }),
-  })
-
-  return NextResponse.json({ ok: true })
+  await new Promise((r) => setTimeout(r, 3000)) // подождать 3 сек
+  attempts++
 }
+
+const imageUrl = result?.images?.[0]?.url
