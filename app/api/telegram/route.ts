@@ -15,7 +15,9 @@ export async function POST(req: NextRequest) {
 
   if (!chatId || !text) return NextResponse.json({ ok: true })
 
-  // === КОМАНДА /img
+  console.log('📥 Получено сообщение:', text)
+
+  // === Команда /img
   if (text.toLowerCase().startsWith('/img ')) {
     const prompt = text.slice(5).trim()
 
@@ -38,6 +40,7 @@ export async function POST(req: NextRequest) {
           }),
         })
       } else {
+        console.error('⚠️ FAL не вернул изображение:', result)
         await fetch(`${TELEGRAM_API}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -48,7 +51,7 @@ export async function POST(req: NextRequest) {
         })
       }
     } catch (err) {
-      console.error('FAL ERROR:', err)
+      console.error('🔥 FAL Ошибка:', JSON.stringify(err, null, 2))
       await fetch(`${TELEGRAM_API}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -62,7 +65,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // === Обычный текстовой ответ через OpenRouter
+  // === Обычный AI ответ через OpenRouter
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
