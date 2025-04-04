@@ -25,7 +25,6 @@ export async function POST(req: NextRequest) {
   const prompt = first.startsWith('/img ') ? parts[0].slice(5).trim() : null
   const otherMessages = parts.slice(prompt ? 1 : 0)
 
-  // === Генерация изображения ===
   if (prompt) {
     if (lastPrompts.get(chatId) === prompt) {
       console.log(`⚠️ [${chatId}] Повторный prompt, пропускаем`)
@@ -40,6 +39,7 @@ export async function POST(req: NextRequest) {
 
         try {
           const stablePrompt = `${prompt}, high quality, cinematic, ultra-detailed`
+
           const result = await fal.subscribe('fal-ai/fast-sdxl', {
             input: {
               prompt: stablePrompt,
@@ -56,9 +56,10 @@ export async function POST(req: NextRequest) {
             },
           })
 
-          const imageUrl = result?.data?.images?.[0]?.url
+          const images = result?.data?.images
+          const imageUrl = images?.[0]?.url
 
-          if (imageUrl && imageUrl.endsWith('.webp')) {
+          if (images && images.length > 0 && imageUrl && imageUrl.startsWith('https://')) {
             await fetch(`${TELEGRAM_API}/sendPhoto`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
               }),
             })
           } else {
-            throw new Error('Картинка не сгенерирована или повреждена.')
+            await sendText(chatId, '🕳 Модель не вернула изображение. Попробуй конкретнее.')
           }
         } catch (err) {
           console.error('🔥 Ошибка генерации:', err)
@@ -79,10 +80,9 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // === Текст → Claude 3.5 Sonnet через OpenRouter ===
   for (const message of otherMessages) {
     try {
-      console.log(`💬 [${chatId}] AI-вопрос: ${message}`)
+      console.log(`🔎 [${chatId}] AI-вопрос: ${message}`)
 
       const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
           'X-Title': 'Telegram AI Bot',
         },
         body: JSON.stringify({
-          model: 'anthropic/claude-3-sonnet',
+          model: 'openai/gpt-4o:online',
           messages: [{ role: 'user', content: message }],
         }),
       })
@@ -104,7 +104,7 @@ export async function POST(req: NextRequest) {
       await sendText(chatId, reply)
     } catch (err) {
       console.error('❌ Ошибка AI:', err)
-      await sendText(chatId, '⚠️ Ошибка AI-ответа.')
+      await sendText(chatId, '⚠️ Ошибка при получении ответа от ИИ.')
     }
   }
 
