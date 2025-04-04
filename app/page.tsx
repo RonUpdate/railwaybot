@@ -19,10 +19,14 @@ export default function Home() {
       })
 
       const data = await res.json()
-      console.log('✅ Ответ от API:', data)
+
+      // Отладка
+      console.log('✅ Ответ от API:', JSON.stringify(data, null, 2))
+      console.log('🧠 Ответ:', data.reply)
+
       setReply(data.reply)
     } catch (err) {
-      console.error('❌ Ошибка:', err)
+      console.error('❌ Ошибка запроса:', err)
     }
 
     setLoading(false)
