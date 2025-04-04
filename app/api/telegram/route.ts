@@ -13,13 +13,11 @@ export async function POST(req: NextRequest) {
 
   console.log('📥 Получено сообщение:', text)
 
-  // === Генерация изображения
   if (text.toLowerCase().startsWith('/img ')) {
     const prompt = text.slice(5).trim()
 
     try {
-      // Шаг 1 — отправка запроса
-      const submission = await fetch('https://queue.fal.run/fal-ai/recraft-20b', {
+      const submission = await fetch('https://queue.fal.run/fal-ai/fast-sdxl', {
         method: 'POST',
         headers: {
           Authorization: `Key ${FAL_KEY}`,
@@ -28,20 +26,17 @@ export async function POST(req: NextRequest) {
         body: JSON.stringify({
           prompt,
           image_size: 'square_hd',
-          style: 'realistic_image',
         }),
       })
 
       const submissionData = await submission.json()
       const requestId = submissionData?.request_id
-
       if (!requestId) throw new Error('FAL не вернул request_id')
 
-      // Шаг 2 — ожидание результата
       let result = null
       let attempts = 0
       while (attempts < 20) {
-        const res = await fetch(`https://queue.fal.run/fal-ai/recraft-20b/requests/${requestId}`, {
+        const res = await fetch(`https://queue.fal.run/fal-ai/fast-sdxl/requests/${requestId}`, {
           method: 'GET',
           headers: {
             Authorization: `Key ${FAL_KEY}`,
@@ -49,18 +44,16 @@ export async function POST(req: NextRequest) {
         })
 
         const data = await res.json()
-
         if (data?.status === 'COMPLETED') {
           result = data
           break
         }
 
-        await new Promise((r) => setTimeout(r, 3000)) // 3 секунды
+        await new Promise((r) => setTimeout(r, 3000))
         attempts++
       }
 
       const imageUrl = result?.images?.[0]?.url
-
       if (imageUrl) {
         await fetch(`${TELEGRAM_API}/sendPhoto`, {
           method: 'POST',
@@ -78,12 +71,12 @@ export async function POST(req: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             chat_id: chatId,
-            text: '😿 Не удалось сгенерировать изображение.',
+            text: '😿 Картинку не удалось сгенерировать.',
           }),
         })
       }
     } catch (err) {
-      console.error('🔥 Ошибка FAL:', err)
+      console.error('🔥 Ошибка генерации:', err)
       await fetch(`${TELEGRAM_API}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -97,44 +90,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // === Обычный AI-ответ (текст)
-  try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app',
-        'X-Title': 'Telegram AI Bot',
-      },
-      body: JSON.stringify({
-        model: 'openai/gpt-3.5-turbo',
-        messages: [{ role: 'user', content: text }],
-      }),
-    })
+  // === Ответ от OpenRouter
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app',
+      'X-Title': 'Telegram AI Bot',
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-3.5-turbo',
+      messages: [{ role: 'user', content: text }],
+    }),
+  })
 
-    const data = await res.json()
-    const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
+  const data = await res.json()
+  const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
 
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: reply,
-      }),
-    })
-  } catch (err) {
-    console.error('❌ Ошибка OpenRouter:', err)
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: '⚠️ Ошибка AI-ответа.',
-      }),
-    })
-  }
+  await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: reply,
+    }),
+  })
 
   return NextResponse.json({ ok: true })
 }
