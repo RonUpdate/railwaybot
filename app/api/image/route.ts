@@ -9,9 +9,7 @@ export async function POST(req: NextRequest) {
   const { prompt } = await req.json()
 
   const result = await fal.subscribe('fal-ai/recraft-20b', {
-    input: {
-      prompt,
-    },
+    input: { prompt },
     logs: true,
     onQueueUpdate(update) {
       if (update.status === 'IN_PROGRESS') {
@@ -20,7 +18,6 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  // В результатах должен быть URL на изображение
-  const image = result?.data?.image || '[изображение не сгенерировано]'
+  const image = result?.data?.images?.[0]?.url || '[не удалось сгенерировать]'
   return NextResponse.json({ image, requestId: result.requestId })
 }
