@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
   console.log(`📥 [${chatId}] Получено сообщение:\n${fullText}`)
 
-  const parts = fullText.split('\n').map(p => p.trim()).filter(Boolean)
+  const parts = fullText.split('\n').map((p: string) => p.trim()).filter(Boolean)
   const first = parts[0].toLowerCase()
   const prompt = first.startsWith('/img ') ? parts[0].slice(5).trim() : null
   const otherMessages = parts.slice(prompt ? 1 : 0)
