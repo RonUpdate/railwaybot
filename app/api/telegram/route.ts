@@ -38,15 +38,20 @@ export async function POST(req: NextRequest) {
         lastPrompts.set(chatId, prompt)
 
         try {
-          const stablePrompt = `(${prompt}), trending on artstation, 8k, ultra realistic, concept art, cinematic lighting, detailed`
+          // Улучшение промпта: автоматическое добавление деталей
+          const isMale = /император|муж|парень|он|воин|солдат/i.test(prompt)
+          const isFemale = /императрица|девушка|женщина|она|принцесса/i.test(prompt)
+          const gender = isMale ? 'male' : isFemale ? 'female' : ''
+          
+          const stablePrompt = `(${prompt}), ${gender}, 8k, ultra realistic, photorealistic, trending on artstation, cinematic lighting, highly detailed, concept art`
 
           const result = await fal.subscribe('fal-ai/fast-sdxl', {
             input: {
               prompt: stablePrompt,
-              negative_prompt: 'ugly, deformed, dark, creepy, blurry, bad anatomy',
+              negative_prompt: 'ugly, deformed, blurry, low quality, distorted, extra limbs, bad anatomy',
               image_size: 'square_hd',
-              guidance_scale: 7.5,
-              num_inference_steps: 25,
+              guidance_scale: 8,
+              num_inference_steps: 30,
             },
             logs: true,
             onQueueUpdate(update) {
@@ -70,7 +75,7 @@ export async function POST(req: NextRequest) {
               }),
             })
           } else {
-            await sendText(chatId, '🕳 Модель не вернула изображение. Попробуй конкретнее.')
+            await sendText(chatId, '🕳 Модель не вернула изображение. Попробуй переформулировать запрос.')
           }
         } catch (err) {
           console.error('🔥 Ошибка генерации:', err)
@@ -80,6 +85,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // === Обработка текстовых запросов через GPT-4o ===
   for (const message of otherMessages) {
     try {
       console.log(`🔎 [${chatId}] AI-вопрос: ${message}`)
@@ -93,7 +99,7 @@ export async function POST(req: NextRequest) {
           'X-Title': 'Telegram AI Bot',
         },
         body: JSON.stringify({
-          model: 'openai/gpt-4o:online',
+          model: 'openai/gpt-4o',
           messages: [{ role: 'user', content: message }],
         }),
       })
