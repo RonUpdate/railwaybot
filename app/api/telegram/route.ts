@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
 
   console.log('📥 Получено сообщение:', text)
 
+  // === Картинка по /img
   if (text.toLowerCase().startsWith('/img ')) {
     const prompt = text.slice(5).trim()
 
@@ -30,6 +31,8 @@ export async function POST(req: NextRequest) {
       })
 
       const submissionData = await submission.json()
+      console.log('📦 Ответ от FAL:', JSON.stringify(submissionData, null, 2)) // 🔍 лог ответа
+
       const requestId = submissionData?.request_id
       if (!requestId) throw new Error('FAL не вернул request_id')
 
@@ -90,32 +93,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
-  // === Ответ от OpenRouter
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-      'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app',
-      'X-Title': 'Telegram AI Bot',
-    },
-    body: JSON.stringify({
-      model: 'openai/gpt-3.5-turbo',
-      messages: [{ role: 'user', content: text }],
-    }),
-  })
+  // === Текст через OpenRouter
+  try {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app',
+        'X-Title': 'Telegram AI Bot',
+      },
+      body: JSON.stringify({
+        model: 'openai/gpt-3.5-turbo',
+        messages: [{ role: 'user', content: text }],
+      }),
+    })
 
-  const data = await res.json()
-  const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
+    const data = await res.json()
+    const reply = data.choices?.[0]?.message?.content || '🤖 Нет ответа.'
 
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: reply,
-    }),
-  })
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: reply,
+      }),
+    })
+  } catch (err) {
+    console.error('❌ Ошибка OpenRouter:', err)
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: '⚠️ Ошибка AI-ответа.',
+      }),
+    })
+  }
 
   return NextResponse.json({ ok: true })
 }
