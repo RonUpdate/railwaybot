@@ -3,24 +3,29 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   const { message } = await req.json()
 
-  const res = await fetch('https://api.openai.com/v1/completions', {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'HTTP-Referer': 'https://railwaybot-production-82aa.up.railway.app', // ← обязательно!
+      'X-Title': 'Railway AI Bot',
     },
     body: JSON.stringify({
-      model: 'text-davinci-003',
-      prompt: message,
-      max_tokens: 100,
+      model: 'openai/gpt-3.5-turbo', // можно заменить на любую доступную модель в openrouter
+      messages: [
+        {
+          role: 'user',
+          content: message,
+        },
+      ],
+      max_tokens: 200,
     }),
   })
 
-  const data = await res.json()
+  const data = await response.json()
+  console.log('🧾 OpenRouter Response:', JSON.stringify(data, null, 2))
 
-  console.log('🧾 RAW OpenAI Response:', JSON.stringify(data, null, 2))
-
-  // Пытаемся вернуть текст, если есть
-  const reply = data?.choices?.[0]?.text?.trim() || '[нет ответа от OpenAI]'
+  const reply = data?.choices?.[0]?.message?.content?.trim() || '[пустой ответ от OpenRouter]'
   return NextResponse.json({ reply })
 }
